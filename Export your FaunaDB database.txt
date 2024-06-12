@@ -1,0 +1,58 @@
+import csv
+from fauna import fql
+from fauna.client import Client
+from fauna.errors import FaunaException
+
+# Initialize FaunaDB client
+client = Client(secret="YOUR_SECRET_KEY_HERE", endpoint="ADD_ENDPOINT")
+
+def fetch_all_documents(collection_name):
+    try:
+        # Compose a query to get all documents from the collection
+        query = fql(f"""
+            let docs = {collection_name}.all().pageSize(1000)
+            docs
+        """)
+        
+        # Run the query and paginate through the results
+        pages = client.paginate(query)
+        
+        # Fetch each document
+        documents = []
+        for page in pages:
+            for doc in page:
+                documents.append(doc)
+        
+        return documents
+    except FaunaException as e:
+        print(f"Error fetching documents: {e}")
+        return []
+
+def backup_to_csv(collection_name, backup_file):
+    documents = fetch_all_documents(collection_name)
+    
+    if documents:
+        # Extract field names from the first document
+        field_names = list(documents[0].keys())
+        
+        # Write documents to CSV
+        with open(backup_file, 'w', newline='') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=field_names)
+            writer.writeheader()
+            for doc in documents:
+                # Convert any complex objects to string for serialization
+                for key, value in doc.items():
+                    if isinstance(value, dict) and 'id' in value and 'collection' in value:
+                        doc[key] = f"{value['collection']['id']}/{value['id']}"
+                writer.writerow(doc)
+        
+        print(f"Backup completed. {len(documents)} documents saved to {backup_file}")
+    else:
+        print("No documents to backup.")
+
+if __name__ == "__main__":
+    # Define your collection name and backup file path
+    collection_name = "YOUR_COLLECTION_NAME"  # Replace with your actual collection name
+    backup_file = "faunadb_backup.csv"
+    
+    backup_to_csv(collection_name, backup_file)
